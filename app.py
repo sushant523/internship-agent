@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+from agents.job_finder import search_all_jobs
+from database import add_job
 
 from config import RESUME_PATH
 from agents.resume_reader import read_resume
@@ -71,18 +73,99 @@ jobs = get_jobs()
 # EMPTY DATABASE MESSAGE
 # ============================================================
 
+# ============================================================
+# JOB REFRESH
+# ============================================================
+
+GREENHOUSE_COMPANIES = [
+    "stripe",
+    "datadog",
+    "cloudflare",
+    "mongodb",
+    "robinhood",
+    "affirm",
+    "figma",
+    "coinbase",
+]
+
+LEVER_COMPANIES = [
+    "palantir",
+]
+
+
+if st.button(
+    "🔄 Refresh Internship Listings",
+    type="primary"
+):
+
+    with st.spinner(
+        "Searching for internships..."
+    ):
+
+        found_jobs = search_all_jobs(
+            GREENHOUSE_COMPANIES,
+            LEVER_COMPANIES
+        )
+
+        for job in found_jobs:
+
+            company = job.get(
+                "source_company",
+                "Unknown"
+            )
+
+            title = job.get(
+                "title",
+                "Unknown"
+            )
+
+            location = job.get(
+                "location",
+                {}
+            ).get(
+                "name",
+                "Unknown"
+            )
+
+            url = job.get(
+                "absolute_url",
+                ""
+            )
+
+            description = job.get(
+                "content",
+                ""
+            )
+
+            add_job(
+                company=company,
+                title=title,
+                location=location,
+                url=url,
+                description=description
+            )
+
+        st.success(
+            f"Found {len(found_jobs)} internships!"
+        )
+
+        st.rerun()
+
+
+# ============================================================
+# EMPTY DATABASE
+# ============================================================
+
+jobs = get_jobs()
+
 if not jobs:
-    st.warning(
-        "No internships are currently stored in the database."
-    )
 
     st.info(
-        "The cloud database is new. "
-        "We will add automatic job refreshing next."
+        "No internships loaded yet. "
+        "Click Refresh Internship Listings above."
     )
 
     st.stop()
-
 
 # ============================================================
 # SCORE UNSCORED JOBS
