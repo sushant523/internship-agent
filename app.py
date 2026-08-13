@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 from agents.job_finder import search_all_jobs
@@ -28,6 +29,8 @@ st.set_page_config(
 # ============================================================
 # DATABASE INITIALIZATION
 # ============================================================
+if "DATABASE_URL" in st.secrets:
+    os.environ["DATABASE_URL"] = st.secrets["DATABASE_URL"]
 
 initialize_database()
 
