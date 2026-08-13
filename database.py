@@ -2,12 +2,35 @@ import sqlite3
 from pathlib import Path
 
 
-DB_PATH = Path(__file__).resolve().parent / "data" / "applications.db"
+# ============================================================
+# DATABASE LOCATION
+# ============================================================
 
+DB_PATH = (
+    Path(__file__).resolve().parent
+    / "data"
+    / "applications.db"
+)
+
+
+# ============================================================
+# CONNECTION
+# ============================================================
 
 def get_connection():
+    # Streamlit Cloud may start without the data folder.
+    # Create it automatically if it doesn't exist.
+    DB_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
     return sqlite3.connect(DB_PATH)
 
+
+# ============================================================
+# INITIALIZE DATABASE
+# ============================================================
 
 def initialize_database():
     conn = get_connection()
@@ -31,6 +54,10 @@ def initialize_database():
     conn.commit()
     conn.close()
 
+
+# ============================================================
+# ADD JOB
+# ============================================================
 
 def add_job(
     company,
@@ -67,6 +94,10 @@ def add_job(
     conn.close()
 
 
+# ============================================================
+# GET JOBS
+# ============================================================
+
 def get_jobs():
     conn = get_connection()
     cursor = conn.cursor()
@@ -94,6 +125,10 @@ def get_jobs():
     return jobs
 
 
+# ============================================================
+# UPDATE MATCH SCORE
+# ============================================================
+
 def update_job_score(
     job_id,
     score
@@ -116,6 +151,10 @@ def update_job_score(
     conn.commit()
     conn.close()
 
+
+# ============================================================
+# UPDATE APPLICATION STATUS
+# ============================================================
 
 def update_job_status(
     job_id,

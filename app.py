@@ -5,11 +5,16 @@ from config import RESUME_PATH
 from agents.resume_reader import read_resume
 from agents.matcher import calculate_resume_match
 from database import (
+    initialize_database,
     get_jobs,
     update_job_score,
     update_job_status,
 )
 
+
+# ============================================================
+# PAGE CONFIG
+# ============================================================
 
 st.set_page_config(
     page_title="Internship Agent",
@@ -18,31 +23,79 @@ st.set_page_config(
 )
 
 
+# ============================================================
+# DATABASE INITIALIZATION
+# ============================================================
+
+initialize_database()
+
+
+# ============================================================
+# HEADER
+# ============================================================
+
 st.title("🤖 Internship Agent")
+
 st.caption(
     "Find, rank, review, and track internship applications."
 )
 
 
-resume_text = read_resume(RESUME_PATH)
+# ============================================================
+# RESUME
+# ============================================================
+
+resume_text = read_resume(
+    RESUME_PATH
+)
 
 if resume_text:
-    st.success("Resume loaded successfully.")
+    st.success(
+        "Resume loaded successfully."
+    )
 else:
-    st.error("Resume could not be loaded.")
+    st.error(
+        "Resume could not be loaded."
+    )
     st.stop()
 
+
+# ============================================================
+# LOAD JOBS
+# ============================================================
 
 jobs = get_jobs()
 
 
-# Score any jobs that still have score 0
+# ============================================================
+# EMPTY DATABASE MESSAGE
+# ============================================================
+
+if not jobs:
+    st.warning(
+        "No internships are currently stored in the database."
+    )
+
+    st.info(
+        "The cloud database is new. "
+        "We will add automatic job refreshing next."
+    )
+
+    st.stop()
+
+
+# ============================================================
+# SCORE UNSCORED JOBS
+# ============================================================
+
 for job in jobs:
+
     job_id = job[0]
-    description = job[5]
+    description = job[5] or ""
     match_score = job[7]
 
     if match_score == 0:
+
         score = calculate_resume_match(
             resume_text,
             description
@@ -57,6 +110,10 @@ for job in jobs:
 # Reload after scoring
 jobs = get_jobs()
 
+
+# ============================================================
+# DATAFRAME
+# ============================================================
 
 columns = [
     "ID",
@@ -82,34 +139,41 @@ df = pd.DataFrame(
 
 col1, col2, col3, col4 = st.columns(4)
 
+
 col1.metric(
     "Jobs Found",
     len(df)
 )
 
+
 col2.metric(
     "Applied",
     int(
         (
-            df["Status"] == "Applied"
+            df["Status"]
+            == "Applied"
         ).sum()
     )
 )
+
 
 col3.metric(
     "Saved",
     int(
         (
-            df["Status"] == "Saved"
+            df["Status"]
+            == "Saved"
         ).sum()
     )
 )
+
 
 col4.metric(
     "Skipped",
     int(
         (
-            df["Status"] == "Skipped"
+            df["Status"]
+            == "Skipped"
         ).sum()
     )
 )
@@ -119,7 +183,9 @@ col4.metric(
 # FILTERS
 # ============================================================
 
-st.subheader("Filters")
+st.subheader(
+    "Filters"
+)
 
 
 minimum_score = st.slider(
@@ -164,20 +230,32 @@ filtered_df = df[
 # JOB TABLE
 # ============================================================
 
-st.subheader("Internships")
+st.subheader(
+    "Internships"
+)
+
+
+display_df = filtered_df[
+    [
+        "Company",
+        "Title",
+        "Location",
+        "Match Score",
+        "Status",
+        "URL"
+    ]
+].copy()
+
+
+display_df["Company"] = (
+    display_df["Company"]
+    .astype(str)
+    .str.title()
+)
 
 
 st.dataframe(
-    filtered_df[
-        [
-            "Company",
-            "Title",
-            "Location",
-            "Match Score",
-            "Status",
-            "URL"
-        ]
-    ],
+    display_df,
     use_container_width=True,
     hide_index=True
 )
@@ -187,19 +265,31 @@ st.dataframe(
 # DETAILED REVIEW
 # ============================================================
 
-st.subheader("Review Jobs")
+st.subheader(
+    "Review Jobs"
+)
 
 
 for _, row in filtered_df.iterrows():
 
-    job_id = int(row["ID"])
+    job_id = int(
+        row["ID"]
+    )
 
     title = row["Title"]
-    company = row["Company"]
+
+    company = str(
+        row["Company"]
+    ).title()
+
     location = row["Location"]
+
     score = row["Match Score"]
+
     status = row["Status"]
+
     url = row["URL"]
+
     description = row["Description"]
 
 
@@ -209,14 +299,18 @@ for _, row in filtered_df.iterrows():
     )
 
 
-    with st.expander(label):
+    with st.expander(
+        label
+    ):
 
         st.write(
-            f"**Location:** {location}"
+            f"**Location:** "
+            f"{location}"
         )
 
         st.write(
-            f"**Status:** {status}"
+            f"**Status:** "
+            f"{status}"
         )
 
         st.write(
@@ -226,6 +320,7 @@ for _, row in filtered_df.iterrows():
 
 
         if url:
+
             st.link_button(
                 "Open Application",
                 url
@@ -235,6 +330,7 @@ for _, row in filtered_df.iterrows():
         st.markdown(
             "### Job Description"
         )
+
 
         st.write(
             description
@@ -250,6 +346,7 @@ for _, row in filtered_df.iterrows():
             "Save",
             key=f"save-{job_id}"
         ):
+
             update_job_status(
                 job_id,
                 "Saved"
@@ -262,6 +359,7 @@ for _, row in filtered_df.iterrows():
             "Applied",
             key=f"applied-{job_id}"
         ):
+
             update_job_status(
                 job_id,
                 "Applied"
@@ -274,6 +372,7 @@ for _, row in filtered_df.iterrows():
             "Skip",
             key=f"skip-{job_id}"
         ):
+
             update_job_status(
                 job_id,
                 "Skipped"
