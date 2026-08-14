@@ -74,6 +74,13 @@ def initialize_database():
                 ADD COLUMN IF NOT EXISTS ai_analysis JSONB
                 """
             )
+            
+            cursor.execute(
+                """
+                ALTER TABLE jobs
+                ADD COLUMN IF NOT EXISTS application_prep JSONB
+                """
+            )
 
 
 # ============================================================
@@ -279,6 +286,69 @@ def get_ai_analysis(
                 try:
                     return json.loads(
                         analysis
+                    )
+                except json.JSONDecodeError:
+                    return None
+
+            return None
+        
+def save_application_prep(
+    job_id,
+    prep
+):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+
+            cursor.execute(
+                """
+                UPDATE jobs
+                SET application_prep = %s
+                WHERE id = %s
+                """,
+                (
+                    json.dumps(prep),
+                    job_id
+                ),
+            )
+
+
+def get_application_prep(
+    job_id
+):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+
+            cursor.execute(
+                """
+                SELECT application_prep
+                FROM jobs
+                WHERE id = %s
+                """,
+                (
+                    job_id,
+                ),
+            )
+
+            row = cursor.fetchone()
+
+            if not row:
+                return None
+
+            prep = row[0]
+
+            if isinstance(
+                prep,
+                dict
+            ):
+                return prep
+
+            if isinstance(
+                prep,
+                str
+            ):
+                try:
+                    return json.loads(
+                        prep
                     )
                 except json.JSONDecodeError:
                     return None
