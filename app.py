@@ -5,7 +5,6 @@ import pandas as pd
 from agents.job_finder import search_all_jobs
 from agents.ai_matcher import analyze_job
 from agents.application_writer import prepare_application
-from agents.application_answers import generate_application_answers
 
 from config import RESUME_PATH
 from agents.resume_reader import read_resume
@@ -21,8 +20,6 @@ from database import (
     get_ai_analysis,
     save_application_prep,
     get_application_prep,
-    save_application_answers,
-    get_application_answers,
 )
 
 
@@ -31,9 +28,106 @@ from database import (
 # ============================================================
 
 st.set_page_config(
-    page_title="Internship Agent",
-    page_icon="🤖",
+    page_title="Internship Tracker",
     layout="wide"
+)
+
+
+# ============================================================
+# VISUAL STYLE
+# ============================================================
+
+st.markdown(
+    """
+    <style>
+        /* Overall page */
+        .stApp {
+            background: var(--background-color);
+        }
+
+        .block-container {
+            max-width: 1180px;
+            padding-top: 2.4rem;
+            padding-bottom: 4rem;
+        }
+
+        /* Headings */
+        h1 {
+            letter-spacing: -0.025em;
+            font-weight: 650;
+            margin-bottom: 0.15rem;
+        }
+
+        h2, h3 {
+            letter-spacing: -0.015em;
+        }
+
+        /* Tone down Streamlit's default alert look */
+        div[data-testid="stAlert"] {
+            border-radius: 8px;
+        }
+
+        /* Metrics */
+        div[data-testid="stMetric"] {
+            border: 1px solid rgba(128, 128, 128, 0.18);
+            border-radius: 10px;
+            padding: 0.95rem 1rem;
+            background: rgba(128, 128, 128, 0.035);
+        }
+
+        div[data-testid="stMetricLabel"] {
+            opacity: 0.72;
+        }
+
+        /* Expanders / role rows */
+        details {
+            border: 1px solid rgba(128, 128, 128, 0.18) !important;
+            border-radius: 10px !important;
+            background: rgba(128, 128, 128, 0.025);
+        }
+
+        details > summary {
+            padding: 0.25rem 0.15rem;
+        }
+
+        /* Buttons: quieter, product-like */
+        .stButton > button,
+        .stLinkButton > a {
+            border-radius: 8px;
+            font-weight: 500;
+            box-shadow: none;
+        }
+
+        /* Tables */
+        div[data-testid="stDataFrame"] {
+            border: 1px solid rgba(128, 128, 128, 0.16);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        /* Less visual noise from separators */
+        hr {
+            opacity: 0.35;
+            margin: 1.4rem 0;
+        }
+
+        /* Captions and helper text */
+        .stCaption {
+            opacity: 0.72;
+        }
+
+        /* Text areas for application work */
+        textarea {
+            border-radius: 8px !important;
+        }
+
+        /* Slightly tighter vertical rhythm */
+        div[data-testid="stVerticalBlock"] {
+            gap: 0.75rem;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 
@@ -59,10 +153,10 @@ initialize_database()
 # HEADER
 # ============================================================
 
-st.title("🤖 Internship Agent")
+st.title("Internship Tracker")
 
 st.caption(
-    "Find, rank, analyze, prepare, review, and track internship applications."
+    "Search, review, prepare, and track internship applications in one place."
 )
 
 
@@ -114,7 +208,7 @@ LEVER_COMPANIES = [
 # ============================================================
 
 if st.button(
-    "🔄 Refresh Internship Listings",
+    "Refresh listings",
     type="primary"
 ):
 
@@ -236,9 +330,9 @@ columns = [
     "Description",
     "Status",
     "Match Score",
-    "AI Match",
+    "Technical Fit",
     "Eligibility",
-    "AI Verdict",
+    "Recommendation",
 ]
 
 
@@ -280,9 +374,9 @@ col3.metric(
 )
 
 col4.metric(
-    "AI Analyzed",
+    "Assessed",
     int(
-        df["AI Match"]
+        df["Technical Fit"]
         .notna()
         .sum()
     )
@@ -302,7 +396,7 @@ filter_col1, filter_col2 = st.columns(2)
 with filter_col1:
 
     minimum_score = st.slider(
-        "Minimum Keyword Resume Match",
+        "Minimum resume match",
         min_value=0,
         max_value=100,
         value=20
@@ -355,9 +449,9 @@ display_df = filtered_df[
         "Title",
         "Location",
         "Match Score",
-        "AI Match",
+        "Technical Fit",
         "Eligibility",
-        "AI Verdict",
+        "Recommendation",
         "Status",
         "URL"
     ]
@@ -374,7 +468,7 @@ display_df["Company"] = (
 display_df = display_df.rename(
     columns={
         "Match Score":
-            "Keyword Match"
+            "Resume Match"
     }
 )
 
@@ -429,7 +523,7 @@ for _, row in filtered_df.iterrows():
     )
 
     stored_ai_match = row[
-        "AI Match"
+        "Technical Fit"
     ]
 
 
@@ -442,7 +536,7 @@ for _, row in filtered_df.iterrows():
     ):
 
         label = (
-            f"🤖 {int(stored_ai_match)}% AI — "
+            f"{int(stored_ai_match)}% fit — "
             f"{title} @ {company}"
         )
 
@@ -522,7 +616,7 @@ for _, row in filtered_df.iterrows():
         if analysis is None:
 
             if st.button(
-                "🤖 Analyze with AI",
+                "Assess fit",
                 key=f"ai-{job_id}",
                 type="primary"
             ):
@@ -586,7 +680,7 @@ for _, row in filtered_df.iterrows():
             # =================================================
 
             if st.button(
-                "🔁 Re-analyze with AI",
+                "Refresh assessment",
                 key=f"reanalyze-{job_id}"
             ):
 
@@ -900,7 +994,7 @@ for _, row in filtered_df.iterrows():
         if prep is None:
 
             if st.button(
-                "📝 Prepare Application",
+                "Prepare application",
                 key=f"prepare-{job_id}",
                 type="primary"
             ):
@@ -956,7 +1050,7 @@ for _, row in filtered_df.iterrows():
         if prep:
 
             st.markdown(
-                "### 📝 Application Prep"
+                "### Application Prep"
             )
 
 
@@ -1065,7 +1159,7 @@ for _, row in filtered_df.iterrows():
             # ================================================
 
             if st.button(
-                "🔁 Regenerate Application Prep",
+                "Regenerate application prep",
                 key=f"regen-prep-{job_id}"
             ):
 
@@ -1113,276 +1207,6 @@ for _, row in filtered_df.iterrows():
                             )
 
 
-
-        # ====================================================
-        # APPLICATION ANSWERS
-        # ====================================================
-
-        st.markdown("---")
-
-        answers_key = (
-            f"answers-{job_id}"
-        )
-
-        answers_data = (
-            st.session_state.get(
-                answers_key
-            )
-        )
-
-        # Load saved answers from Supabase
-        if answers_data is None:
-
-            try:
-
-                answers_data = get_application_answers(
-                    job_id
-                )
-
-                if answers_data:
-
-                    st.session_state[
-                        answers_key
-                    ] = answers_data
-
-            except Exception as error:
-
-                st.warning(
-                    "Could not load saved "
-                    f"application answers: {error}"
-                )
-
-
-        # Generate answers for the first time
-        if answers_data is None:
-
-            if st.button(
-                "✍️ Generate Application Answers",
-                key=f"generate-answers-{job_id}",
-                type="primary"
-            ):
-
-                if (
-                    "OPENAI_API_KEY"
-                    not in os.environ
-                ):
-
-                    st.error(
-                        "OPENAI_API_KEY is not configured."
-                    )
-
-                else:
-
-                    with st.spinner(
-                        "Generating application answers..."
-                    ):
-
-                        try:
-
-                            answers_data = generate_application_answers(
-                                resume_text=resume_text,
-                                title=title,
-                                company=company,
-                                location=location,
-                                description=description,
-                                prep=prep
-                            )
-
-                            save_application_answers(
-                                job_id,
-                                answers_data
-                            )
-
-                            st.session_state[
-                                answers_key
-                            ] = answers_data
-
-                            st.rerun()
-
-                        except Exception as error:
-
-                            st.error(
-                                "Application answer generation "
-                                f"failed: {error}"
-                            )
-
-
-        # Display and edit saved/generated answers
-        if answers_data:
-
-            st.markdown(
-                "### ✍️ Application Answers"
-            )
-
-            review_flags = (
-                answers_data.get(
-                    "review_flags",
-                    []
-                )
-            )
-
-            if review_flags:
-
-                st.warning(
-                    "These items need your confirmation "
-                    "before any application is submitted."
-                )
-
-                for flag in review_flags:
-
-                    st.write(
-                        f"⚠️ {flag}"
-                    )
-
-
-            answer_items = (
-                answers_data.get(
-                    "answers",
-                    []
-                )
-            )
-
-            if answer_items:
-
-                with st.form(
-                    key=f"answers-form-{job_id}"
-                ):
-
-                    edited_answers = []
-
-                    for index, item in enumerate(
-                        answer_items
-                    ):
-
-                        question = item.get(
-                            "question",
-                            ""
-                        )
-
-                        category = item.get(
-                            "category",
-                            "additional"
-                        )
-
-                        current_answer = item.get(
-                            "answer",
-                            ""
-                        )
-
-                        st.markdown(
-                            f"**{question}**"
-                        )
-
-                        st.caption(
-                            f"Category: {category}"
-                        )
-
-                        edited_text = st.text_area(
-                            "Answer",
-                            value=current_answer,
-                            height=170,
-                            key=(
-                                f"answer-text-"
-                                f"{job_id}-{index}"
-                            ),
-                            label_visibility="collapsed"
-                        )
-
-                        edited_answers.append(
-                            {
-                                "question": question,
-                                "answer": edited_text,
-                                "category": category,
-                            }
-                        )
-
-                    save_edits = st.form_submit_button(
-                        "💾 Save Edited Answers",
-                        type="primary"
-                    )
-
-                    if save_edits:
-
-                        updated_answers_data = {
-                            "answers": edited_answers,
-                            "review_flags": review_flags,
-                        }
-
-                        try:
-
-                            save_application_answers(
-                                job_id,
-                                updated_answers_data
-                            )
-
-                            st.session_state[
-                                answers_key
-                            ] = updated_answers_data
-
-                            st.success(
-                                "Edited application answers saved."
-                            )
-
-                        except Exception as error:
-
-                            st.error(
-                                "Could not save edited answers: "
-                                f"{error}"
-                            )
-
-
-            # Regenerate answer drafts
-            if st.button(
-                "🔁 Regenerate Application Answers",
-                key=f"regen-answers-{job_id}"
-            ):
-
-                if (
-                    "OPENAI_API_KEY"
-                    not in os.environ
-                ):
-
-                    st.error(
-                        "OPENAI_API_KEY is not configured."
-                    )
-
-                else:
-
-                    with st.spinner(
-                        "Regenerating application answers..."
-                    ):
-
-                        try:
-
-                            new_answers_data = (
-                                generate_application_answers(
-                                    resume_text=resume_text,
-                                    title=title,
-                                    company=company,
-                                    location=location,
-                                    description=description,
-                                    prep=prep
-                                )
-                            )
-
-                            save_application_answers(
-                                job_id,
-                                new_answers_data
-                            )
-
-                            st.session_state[
-                                answers_key
-                            ] = new_answers_data
-
-                            st.rerun()
-
-                        except Exception as error:
-
-                            st.error(
-                                "Application answer regeneration "
-                                f"failed: {error}"
-                            )
-
         # ====================================================
         # APPLICATION LINK
         # ====================================================
@@ -1392,7 +1216,7 @@ for _, row in filtered_df.iterrows():
         if url:
 
             st.link_button(
-                "🚀 Open Application",
+                "Open posting",
                 url
             )
 
@@ -1424,7 +1248,7 @@ for _, row in filtered_df.iterrows():
 
 
         if col1.button(
-            "⭐ Save",
+            "Save",
             key=f"save-{job_id}"
         ):
 
@@ -1437,7 +1261,7 @@ for _, row in filtered_df.iterrows():
 
 
         if col2.button(
-            "✅ Applied",
+            "Mark applied",
             key=f"applied-{job_id}"
         ):
 
@@ -1450,7 +1274,7 @@ for _, row in filtered_df.iterrows():
 
 
         if col3.button(
-            "⏭️ Skip",
+            "Skip",
             key=f"skip-{job_id}"
         ):
 
