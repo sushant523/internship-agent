@@ -1,14 +1,16 @@
 import os
 import streamlit as st
 import pandas as pd
-from agents.job_finder import search_all_jobs
-from database import add_job
 
+from agents.job_finder import search_all_jobs
+from agents.ai_matcher import analyze_job
 from config import RESUME_PATH
 from agents.resume_reader import read_resume
 from agents.matcher import calculate_resume_match
+
 from database import (
     initialize_database,
+    add_job,
     get_jobs,
     update_job_score,
     update_job_status,
@@ -27,10 +29,19 @@ st.set_page_config(
 
 
 # ============================================================
-# DATABASE INITIALIZATION
+# SECRETS / ENVIRONMENT
 # ============================================================
+
 if "DATABASE_URL" in st.secrets:
     os.environ["DATABASE_URL"] = st.secrets["DATABASE_URL"]
+
+if "OPENAI_API_KEY" in st.secrets:
+    os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+
+
+# ============================================================
+# DATABASE INITIALIZATION
+# ============================================================
 
 initialize_database()
 
@@ -64,17 +75,6 @@ else:
     )
     st.stop()
 
-
-# ============================================================
-# LOAD JOBS
-# ============================================================
-
-jobs = get_jobs()
-
-
-# ============================================================
-# EMPTY DATABASE MESSAGE
-# ============================================================
 
 # ============================================================
 # JOB REFRESH
@@ -156,7 +156,7 @@ if st.button(
 
 
 # ============================================================
-# EMPTY DATABASE
+# LOAD JOBS
 # ============================================================
 
 jobs = get_jobs()
@@ -169,6 +169,7 @@ if not jobs:
     )
 
     st.stop()
+
 
 # ============================================================
 # SCORE UNSCORED JOBS
@@ -193,7 +194,6 @@ for job in jobs:
         )
 
 
-# Reload after scoring
 jobs = get_jobs()
 
 
@@ -225,12 +225,10 @@ df = pd.DataFrame(
 
 col1, col2, col3, col4 = st.columns(4)
 
-
 col1.metric(
     "Jobs Found",
     len(df)
 )
-
 
 col2.metric(
     "Applied",
@@ -242,7 +240,6 @@ col2.metric(
     )
 )
 
-
 col3.metric(
     "Saved",
     int(
@@ -252,7 +249,6 @@ col3.metric(
         ).sum()
     )
 )
-
 
 col4.metric(
     "Skipped",
@@ -273,14 +269,12 @@ st.subheader(
     "Filters"
 )
 
-
 minimum_score = st.slider(
     "Minimum Resume Match",
     min_value=0,
     max_value=100,
     value=20
 )
-
 
 status_filter = st.multiselect(
     "Status",
@@ -320,7 +314,6 @@ st.subheader(
     "Internships"
 )
 
-
 display_df = filtered_df[
     [
         "Company",
@@ -332,13 +325,11 @@ display_df = filtered_df[
     ]
 ].copy()
 
-
 display_df["Company"] = (
     display_df["Company"]
     .astype(str)
     .str.title()
 )
-
 
 st.dataframe(
     display_df,
@@ -376,7 +367,7 @@ for _, row in filtered_df.iterrows():
 
     url = row["URL"]
 
-    description = row["Description"]
+    description = row["Description"] or ""
 
 
     label = (
@@ -405,6 +396,154 @@ for _, row in filtered_df.iterrows():
         )
 
 
+        # ====================================================
+        # AI ANALYSIS
+        # ====================================================
+
+        if st.button(
+            "🤖 Analyze with AI",
+            key=f"ai-{job_id}"
+        ):
+
+            if "OPENAI_API_KEY" not in os.environ:
+
+                st.error(
+                    "OPENAI_API_KEY is not configured."
+                )
+
+            else:
+
+                with st.spinner(
+                    "Analyzing this internship..."
+                ):
+
+                    try:
+
+                        analysis = analyze_job(
+                            resume_text=resume_text,
+                            title=title,
+                            company=company,
+                            location=location,
+                            description=description
+                        )
+
+                        st.session_state[
+                            f"analysis-{job_id}"
+                        ] = analysis
+
+                    except Exception as error:
+
+                        st.error(
+                            f"AI analysis failed: {error}"
+                        )
+
+
+        analysis = st.session_state.get(
+            f"analysis-{job_id}"
+        )
+
+
+        if analysis:
+
+            st.markdown(
+                "### 🤖 AI Analysis"
+            )
+
+            ai_score = analysis.get(
+                "match_score",
+                0
+            )
+
+            verdict = analysis.get(
+                "verdict",
+                "N/A"
+            )
+
+            st.metric(
+                "AI Match",
+                f"{ai_score}%"
+            )
+
+            st.write(
+                f"**Verdict:** "
+                f"{verdict}"
+            )
+
+
+            strengths = analysis.get(
+                "strengths",
+                []
+            )
+
+            if strengths:
+
+                st.markdown(
+                    "**Strong Matches**"
+                )
+
+                for strength in strengths:
+
+                    st.write(
+                        f"✅ {strength}"
+                    )
+
+
+            gaps = analysis.get(
+                "gaps",
+                []
+            )
+
+            if gaps:
+
+                st.markdown(
+                    "**Potential Gaps**"
+                )
+
+                for gap in gaps:
+
+                    st.write(
+                        f"⚠️ {gap}"
+                    )
+
+
+            eligibility_notes = analysis.get(
+                "eligibility_notes",
+                []
+            )
+
+            if eligibility_notes:
+
+                st.markdown(
+                    "**Eligibility Notes**"
+                )
+
+                for note in eligibility_notes:
+
+                    st.write(
+                        f"• {note}"
+                    )
+
+
+            recommendation = analysis.get(
+                "recommendation",
+                ""
+            )
+
+            if recommendation:
+
+                st.markdown(
+                    "**Recommendation**"
+                )
+
+                st.write(
+                    recommendation
+                )
+
+
+        # ====================================================
+        # APPLICATION LINK
+        # ====================================================
+
         if url:
 
             st.link_button(
@@ -413,15 +552,22 @@ for _, row in filtered_df.iterrows():
             )
 
 
+        # ====================================================
+        # JOB DESCRIPTION
+        # ====================================================
+
         st.markdown(
             "### Job Description"
         )
-
 
         st.write(
             description
         )
 
+
+        # ====================================================
+        # STATUS BUTTONS
+        # ====================================================
 
         col1, col2, col3 = (
             st.columns(3)
