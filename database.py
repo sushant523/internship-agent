@@ -74,11 +74,18 @@ def initialize_database():
                 ADD COLUMN IF NOT EXISTS ai_analysis JSONB
                 """
             )
-            
+
             cursor.execute(
                 """
                 ALTER TABLE jobs
                 ADD COLUMN IF NOT EXISTS application_prep JSONB
+                """
+            )
+
+            cursor.execute(
+                """
+                ALTER TABLE jobs
+                ADD COLUMN IF NOT EXISTS application_answers JSONB
                 """
             )
 
@@ -291,7 +298,12 @@ def get_ai_analysis(
                     return None
 
             return None
-        
+
+
+# ============================================================
+# SAVE APPLICATION PREP
+# ============================================================
+
 def save_application_prep(
     job_id,
     prep
@@ -306,11 +318,17 @@ def save_application_prep(
                 WHERE id = %s
                 """,
                 (
-                    json.dumps(prep),
+                    json.dumps(
+                        prep
+                    ),
                     job_id
                 ),
             )
 
+
+# ============================================================
+# LOAD APPLICATION PREP
+# ============================================================
 
 def get_application_prep(
     job_id
@@ -349,6 +367,80 @@ def get_application_prep(
                 try:
                     return json.loads(
                         prep
+                    )
+                except json.JSONDecodeError:
+                    return None
+
+            return None
+
+
+# ============================================================
+# SAVE APPLICATION ANSWERS
+# ============================================================
+
+def save_application_answers(
+    job_id,
+    answers
+):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+
+            cursor.execute(
+                """
+                UPDATE jobs
+                SET application_answers = %s
+                WHERE id = %s
+                """,
+                (
+                    json.dumps(
+                        answers
+                    ),
+                    job_id
+                ),
+            )
+
+
+# ============================================================
+# LOAD APPLICATION ANSWERS
+# ============================================================
+
+def get_application_answers(
+    job_id
+):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+
+            cursor.execute(
+                """
+                SELECT application_answers
+                FROM jobs
+                WHERE id = %s
+                """,
+                (
+                    job_id,
+                ),
+            )
+
+            row = cursor.fetchone()
+
+            if not row:
+                return None
+
+            answers = row[0]
+
+            if isinstance(
+                answers,
+                dict
+            ):
+                return answers
+
+            if isinstance(
+                answers,
+                str
+            ):
+                try:
+                    return json.loads(
+                        answers
                     )
                 except json.JSONDecodeError:
                     return None
