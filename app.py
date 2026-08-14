@@ -4,6 +4,8 @@ import pandas as pd
 
 from agents.job_finder import search_all_jobs
 from agents.ai_matcher import analyze_job
+from agents.application_writer import prepare_application
+
 from config import RESUME_PATH
 from agents.resume_reader import read_resume
 from agents.matcher import calculate_resume_match
@@ -16,6 +18,8 @@ from database import (
     update_job_status,
     save_ai_analysis,
     get_ai_analysis,
+    save_application_prep,
+    get_application_prep,
 )
 
 
@@ -55,7 +59,7 @@ initialize_database()
 st.title("🤖 Internship Agent")
 
 st.caption(
-    "Find, rank, analyze, review, and track internship applications."
+    "Find, rank, analyze, prepare, review, and track internship applications."
 )
 
 
@@ -68,13 +72,17 @@ resume_text = read_resume(
 )
 
 if resume_text:
+
     st.success(
         "Resume loaded successfully."
     )
+
 else:
+
     st.error(
         "Resume could not be loaded."
     )
+
     st.stop()
 
 
@@ -396,7 +404,9 @@ for _, row in filtered_df.iterrows():
         row["Company"]
     ).title()
 
-    location = row["Location"]
+    location = row[
+        "Location"
+    ]
 
     keyword_score = row[
         "Match Score"
@@ -417,10 +427,6 @@ for _, row in filtered_df.iterrows():
 
     stored_ai_match = row[
         "AI Match"
-    ]
-
-    stored_verdict = row[
-        "AI Verdict"
     ]
 
 
@@ -450,7 +456,7 @@ for _, row in filtered_df.iterrows():
     ):
 
         # ====================================================
-        # BASIC JOB INFO
+        # BASIC INFO
         # ====================================================
 
         info1, info2, info3 = (
@@ -502,8 +508,7 @@ for _, row in filtered_df.iterrows():
             except Exception as error:
 
                 st.warning(
-                    f"Could not load saved "
-                    f"AI analysis: {error}"
+                    f"Could not load saved AI analysis: {error}"
                 )
 
 
@@ -525,8 +530,7 @@ for _, row in filtered_df.iterrows():
                 ):
 
                     st.error(
-                        "OPENAI_API_KEY "
-                        "is not configured."
+                        "OPENAI_API_KEY is not configured."
                     )
 
                 else:
@@ -559,8 +563,7 @@ for _, row in filtered_df.iterrows():
                         except Exception as error:
 
                             st.error(
-                                f"AI analysis failed: "
-                                f"{error}"
+                                f"AI analysis failed: {error}"
                             )
 
 
@@ -590,27 +593,23 @@ for _, row in filtered_df.iterrows():
                 ):
 
                     st.error(
-                        "OPENAI_API_KEY "
-                        "is not configured."
+                        "OPENAI_API_KEY is not configured."
                     )
 
                 else:
 
                     with st.spinner(
-                        "Re-analyzing this "
-                        "internship..."
+                        "Re-analyzing this internship..."
                     ):
 
                         try:
 
-                            new_analysis = (
-                                analyze_job(
-                                    resume_text=resume_text,
-                                    title=title,
-                                    company=company,
-                                    location=location,
-                                    description=description
-                                )
+                            new_analysis = analyze_job(
+                                resume_text=resume_text,
+                                title=title,
+                                company=company,
+                                location=location,
+                                description=description
                             )
 
                             save_ai_analysis(
@@ -627,8 +626,7 @@ for _, row in filtered_df.iterrows():
                         except Exception as error:
 
                             st.error(
-                                "AI re-analysis "
-                                f"failed: {error}"
+                                f"AI re-analysis failed: {error}"
                             )
 
 
@@ -697,7 +695,7 @@ for _, row in filtered_df.iterrows():
 
 
             # =================================================
-            # TECHNICAL GAPS
+            # GAPS
             # =================================================
 
             gaps = analysis.get(
@@ -781,8 +779,7 @@ for _, row in filtered_df.iterrows():
                     st.write(
                         f"{icon} "
                         f"**{requirement}** "
-                        f"— "
-                        f"{requirement_status}"
+                        f"— {requirement_status}"
                     )
 
                     if evidence:
@@ -796,9 +793,11 @@ for _, row in filtered_df.iterrows():
             # PREFERRED QUALIFICATIONS
             # =================================================
 
-            preferred = analysis.get(
-                "preferred_qualifications",
-                []
+            preferred = (
+                analysis.get(
+                    "preferred_qualifications",
+                    []
+                )
             )
 
             if preferred:
@@ -852,7 +851,267 @@ for _, row in filtered_df.iterrows():
 
 
         # ====================================================
-        # APPLICATION
+        # APPLICATION PREP
+        # ====================================================
+
+        st.markdown("---")
+
+        prep_key = (
+            f"prep-{job_id}"
+        )
+
+        prep = (
+            st.session_state.get(
+                prep_key
+            )
+        )
+
+
+        # Check Supabase
+        if prep is None:
+
+            try:
+
+                prep = get_application_prep(
+                    job_id
+                )
+
+                if prep:
+
+                    st.session_state[
+                        prep_key
+                    ] = prep
+
+            except Exception as error:
+
+                st.warning(
+                    "Could not load saved "
+                    f"application prep: {error}"
+                )
+
+
+        # ====================================================
+        # GENERATE APPLICATION PREP
+        # ====================================================
+
+        if prep is None:
+
+            if st.button(
+                "📝 Prepare Application",
+                key=f"prepare-{job_id}",
+                type="primary"
+            ):
+
+                if (
+                    "OPENAI_API_KEY"
+                    not in os.environ
+                ):
+
+                    st.error(
+                        "OPENAI_API_KEY is not configured."
+                    )
+
+                else:
+
+                    with st.spinner(
+                        "Preparing application materials..."
+                    ):
+
+                        try:
+
+                            prep = prepare_application(
+                                resume_text=resume_text,
+                                title=title,
+                                company=company,
+                                location=location,
+                                description=description
+                            )
+
+                            save_application_prep(
+                                job_id,
+                                prep
+                            )
+
+                            st.session_state[
+                                prep_key
+                            ] = prep
+
+                            st.rerun()
+
+                        except Exception as error:
+
+                            st.error(
+                                "Application preparation "
+                                f"failed: {error}"
+                            )
+
+
+        # ====================================================
+        # DISPLAY APPLICATION PREP
+        # ====================================================
+
+        if prep:
+
+            st.markdown(
+                "### 📝 Application Prep"
+            )
+
+
+            why_company = prep.get(
+                "why_company",
+                ""
+            )
+
+            if why_company:
+
+                st.markdown(
+                    "**Why this company?**"
+                )
+
+                st.write(
+                    why_company
+                )
+
+
+            why_role = prep.get(
+                "why_role",
+                ""
+            )
+
+            if why_role:
+
+                st.markdown(
+                    "**Why this role?**"
+                )
+
+                st.write(
+                    why_role
+                )
+
+
+            experience_summary = prep.get(
+                "experience_summary",
+                ""
+            )
+
+            if experience_summary:
+
+                st.markdown(
+                    "**Relevant Experience Summary**"
+                )
+
+                st.write(
+                    experience_summary
+                )
+
+
+            resume_points = prep.get(
+                "resume_points",
+                []
+            )
+
+            if resume_points:
+
+                st.markdown(
+                    "**Resume Points to Emphasize**"
+                )
+
+                for point in resume_points:
+
+                    st.write(
+                        f"• {point}"
+                    )
+
+
+            likely_questions = prep.get(
+                "likely_questions",
+                []
+            )
+
+            if likely_questions:
+
+                st.markdown(
+                    "**Likely Application Questions**"
+                )
+
+                for question in likely_questions:
+
+                    st.write(
+                        f"• {question}"
+                    )
+
+
+            cover_letter = prep.get(
+                "cover_letter",
+                ""
+            )
+
+            if cover_letter:
+
+                with st.expander(
+                    "View Cover Letter Draft"
+                ):
+
+                    st.write(
+                        cover_letter
+                    )
+
+
+            # ================================================
+            # REGENERATE APPLICATION PREP
+            # ================================================
+
+            if st.button(
+                "🔁 Regenerate Application Prep",
+                key=f"regen-prep-{job_id}"
+            ):
+
+                if (
+                    "OPENAI_API_KEY"
+                    not in os.environ
+                ):
+
+                    st.error(
+                        "OPENAI_API_KEY is not configured."
+                    )
+
+                else:
+
+                    with st.spinner(
+                        "Regenerating application materials..."
+                    ):
+
+                        try:
+
+                            new_prep = prepare_application(
+                                resume_text=resume_text,
+                                title=title,
+                                company=company,
+                                location=location,
+                                description=description
+                            )
+
+                            save_application_prep(
+                                job_id,
+                                new_prep
+                            )
+
+                            st.session_state[
+                                prep_key
+                            ] = new_prep
+
+                            st.rerun()
+
+                        except Exception as error:
+
+                            st.error(
+                                "Application regeneration "
+                                f"failed: {error}"
+                            )
+
+
+        # ====================================================
+        # APPLICATION LINK
         # ====================================================
 
         st.markdown("---")
