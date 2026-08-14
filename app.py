@@ -5,6 +5,7 @@ import pandas as pd
 from agents.job_finder import search_all_jobs
 from agents.ai_matcher import analyze_job
 from agents.application_writer import prepare_application
+from agents.application_answers import generate_application_answers
 
 from config import RESUME_PATH
 from agents.resume_reader import read_resume
@@ -20,6 +21,8 @@ from database import (
     get_ai_analysis,
     save_application_prep,
     get_application_prep,
+    save_application_answers,
+    get_application_answers,
 )
 
 
@@ -1109,6 +1112,276 @@ for _, row in filtered_df.iterrows():
                                 f"failed: {error}"
                             )
 
+
+
+        # ====================================================
+        # APPLICATION ANSWERS
+        # ====================================================
+
+        st.markdown("---")
+
+        answers_key = (
+            f"answers-{job_id}"
+        )
+
+        answers_data = (
+            st.session_state.get(
+                answers_key
+            )
+        )
+
+        # Load saved answers from Supabase
+        if answers_data is None:
+
+            try:
+
+                answers_data = get_application_answers(
+                    job_id
+                )
+
+                if answers_data:
+
+                    st.session_state[
+                        answers_key
+                    ] = answers_data
+
+            except Exception as error:
+
+                st.warning(
+                    "Could not load saved "
+                    f"application answers: {error}"
+                )
+
+
+        # Generate answers for the first time
+        if answers_data is None:
+
+            if st.button(
+                "✍️ Generate Application Answers",
+                key=f"generate-answers-{job_id}",
+                type="primary"
+            ):
+
+                if (
+                    "OPENAI_API_KEY"
+                    not in os.environ
+                ):
+
+                    st.error(
+                        "OPENAI_API_KEY is not configured."
+                    )
+
+                else:
+
+                    with st.spinner(
+                        "Generating application answers..."
+                    ):
+
+                        try:
+
+                            answers_data = generate_application_answers(
+                                resume_text=resume_text,
+                                title=title,
+                                company=company,
+                                location=location,
+                                description=description,
+                                prep=prep
+                            )
+
+                            save_application_answers(
+                                job_id,
+                                answers_data
+                            )
+
+                            st.session_state[
+                                answers_key
+                            ] = answers_data
+
+                            st.rerun()
+
+                        except Exception as error:
+
+                            st.error(
+                                "Application answer generation "
+                                f"failed: {error}"
+                            )
+
+
+        # Display and edit saved/generated answers
+        if answers_data:
+
+            st.markdown(
+                "### ✍️ Application Answers"
+            )
+
+            review_flags = (
+                answers_data.get(
+                    "review_flags",
+                    []
+                )
+            )
+
+            if review_flags:
+
+                st.warning(
+                    "These items need your confirmation "
+                    "before any application is submitted."
+                )
+
+                for flag in review_flags:
+
+                    st.write(
+                        f"⚠️ {flag}"
+                    )
+
+
+            answer_items = (
+                answers_data.get(
+                    "answers",
+                    []
+                )
+            )
+
+            if answer_items:
+
+                with st.form(
+                    key=f"answers-form-{job_id}"
+                ):
+
+                    edited_answers = []
+
+                    for index, item in enumerate(
+                        answer_items
+                    ):
+
+                        question = item.get(
+                            "question",
+                            ""
+                        )
+
+                        category = item.get(
+                            "category",
+                            "additional"
+                        )
+
+                        current_answer = item.get(
+                            "answer",
+                            ""
+                        )
+
+                        st.markdown(
+                            f"**{question}**"
+                        )
+
+                        st.caption(
+                            f"Category: {category}"
+                        )
+
+                        edited_text = st.text_area(
+                            "Answer",
+                            value=current_answer,
+                            height=170,
+                            key=(
+                                f"answer-text-"
+                                f"{job_id}-{index}"
+                            ),
+                            label_visibility="collapsed"
+                        )
+
+                        edited_answers.append(
+                            {
+                                "question": question,
+                                "answer": edited_text,
+                                "category": category,
+                            }
+                        )
+
+                    save_edits = st.form_submit_button(
+                        "💾 Save Edited Answers",
+                        type="primary"
+                    )
+
+                    if save_edits:
+
+                        updated_answers_data = {
+                            "answers": edited_answers,
+                            "review_flags": review_flags,
+                        }
+
+                        try:
+
+                            save_application_answers(
+                                job_id,
+                                updated_answers_data
+                            )
+
+                            st.session_state[
+                                answers_key
+                            ] = updated_answers_data
+
+                            st.success(
+                                "Edited application answers saved."
+                            )
+
+                        except Exception as error:
+
+                            st.error(
+                                "Could not save edited answers: "
+                                f"{error}"
+                            )
+
+
+            # Regenerate answer drafts
+            if st.button(
+                "🔁 Regenerate Application Answers",
+                key=f"regen-answers-{job_id}"
+            ):
+
+                if (
+                    "OPENAI_API_KEY"
+                    not in os.environ
+                ):
+
+                    st.error(
+                        "OPENAI_API_KEY is not configured."
+                    )
+
+                else:
+
+                    with st.spinner(
+                        "Regenerating application answers..."
+                    ):
+
+                        try:
+
+                            new_answers_data = (
+                                generate_application_answers(
+                                    resume_text=resume_text,
+                                    title=title,
+                                    company=company,
+                                    location=location,
+                                    description=description,
+                                    prep=prep
+                                )
+                            )
+
+                            save_application_answers(
+                                job_id,
+                                new_answers_data
+                            )
+
+                            st.session_state[
+                                answers_key
+                            ] = new_answers_data
+
+                            st.rerun()
+
+                        except Exception as error:
+
+                            st.error(
+                                "Application answer regeneration "
+                                f"failed: {error}"
+                            )
 
         # ====================================================
         # APPLICATION LINK
