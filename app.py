@@ -42,7 +42,7 @@ if "OPENAI_API_KEY" in st.secrets:
 
 
 # ============================================================
-# DATABASE INITIALIZATION
+# DATABASE
 # ============================================================
 
 initialize_database()
@@ -55,7 +55,7 @@ initialize_database()
 st.title("🤖 Internship Agent")
 
 st.caption(
-    "Find, rank, review, and track internship applications."
+    "Find, rank, analyze, review, and track internship applications."
 )
 
 
@@ -79,7 +79,7 @@ else:
 
 
 # ============================================================
-# JOB REFRESH
+# JOB SOURCES
 # ============================================================
 
 GREENHOUSE_COMPANIES = [
@@ -98,6 +98,10 @@ LEVER_COMPANIES = [
 ]
 
 
+# ============================================================
+# REFRESH JOBS
+# ============================================================
+
 if st.button(
     "🔄 Refresh Internship Listings",
     type="primary"
@@ -107,54 +111,62 @@ if st.button(
         "Searching for internships..."
     ):
 
-        found_jobs = search_all_jobs(
-            GREENHOUSE_COMPANIES,
-            LEVER_COMPANIES
-        )
+        try:
 
-        for job in found_jobs:
-
-            company = job.get(
-                "source_company",
-                "Unknown"
+            found_jobs = search_all_jobs(
+                GREENHOUSE_COMPANIES,
+                LEVER_COMPANIES
             )
 
-            title = job.get(
-                "title",
-                "Unknown"
+            for job in found_jobs:
+
+                company = job.get(
+                    "source_company",
+                    "Unknown"
+                )
+
+                title = job.get(
+                    "title",
+                    "Unknown"
+                )
+
+                location = job.get(
+                    "location",
+                    {}
+                ).get(
+                    "name",
+                    "Unknown"
+                )
+
+                url = job.get(
+                    "absolute_url",
+                    ""
+                )
+
+                description = job.get(
+                    "content",
+                    ""
+                )
+
+                add_job(
+                    company=company,
+                    title=title,
+                    location=location,
+                    url=url,
+                    description=description
+                )
+
+            st.success(
+                f"Found {len(found_jobs)} matching internships."
             )
 
-            location = job.get(
-                "location",
-                {}
-            ).get(
-                "name",
-                "Unknown"
+            st.rerun()
+
+        except Exception as error:
+
+            st.error(
+                f"Job refresh failed: {error}"
             )
-
-            url = job.get(
-                "absolute_url",
-                ""
-            )
-
-            description = job.get(
-                "content",
-                ""
-            )
-
-            add_job(
-                company=company,
-                title=title,
-                location=location,
-                url=url,
-                description=description
-            )
-
-        st.success(
-            f"Found {len(found_jobs)} internships!"
-        )
-
-        st.rerun()
 
 
 # ============================================================
@@ -196,6 +208,7 @@ for job in jobs:
         )
 
 
+# Reload after scoring
 jobs = get_jobs()
 
 
@@ -212,6 +225,9 @@ columns = [
     "Description",
     "Status",
     "Match Score",
+    "AI Match",
+    "Eligibility",
+    "AI Verdict",
 ]
 
 
@@ -253,12 +269,11 @@ col3.metric(
 )
 
 col4.metric(
-    "Skipped",
+    "AI Analyzed",
     int(
-        (
-            df["Status"]
-            == "Skipped"
-        ).sum()
+        df["AI Match"]
+        .notna()
+        .sum()
     )
 )
 
@@ -271,27 +286,34 @@ st.subheader(
     "Filters"
 )
 
-minimum_score = st.slider(
-    "Minimum Resume Match",
-    min_value=0,
-    max_value=100,
-    value=20
-)
+filter_col1, filter_col2 = st.columns(2)
 
-status_filter = st.multiselect(
-    "Status",
-    [
-        "New",
-        "Saved",
-        "Applied",
-        "Skipped"
-    ],
-    default=[
-        "New",
-        "Saved",
-        "Applied"
-    ]
-)
+with filter_col1:
+
+    minimum_score = st.slider(
+        "Minimum Keyword Resume Match",
+        min_value=0,
+        max_value=100,
+        value=20
+    )
+
+
+with filter_col2:
+
+    status_filter = st.multiselect(
+        "Application Status",
+        [
+            "New",
+            "Saved",
+            "Applied",
+            "Skipped"
+        ],
+        default=[
+            "New",
+            "Saved",
+            "Applied"
+        ]
+    )
 
 
 filtered_df = df[
@@ -305,11 +327,11 @@ filtered_df = df[
             status_filter
         )
     )
-]
+].copy()
 
 
 # ============================================================
-# JOB TABLE
+# MAIN JOB TABLE
 # ============================================================
 
 st.subheader(
@@ -322,16 +344,29 @@ display_df = filtered_df[
         "Title",
         "Location",
         "Match Score",
+        "AI Match",
+        "Eligibility",
+        "AI Verdict",
         "Status",
         "URL"
     ]
 ].copy()
+
 
 display_df["Company"] = (
     display_df["Company"]
     .astype(str)
     .str.title()
 )
+
+
+display_df = display_df.rename(
+    columns={
+        "Match Score":
+            "Keyword Match"
+    }
+)
+
 
 st.dataframe(
     display_df,
@@ -363,36 +398,76 @@ for _, row in filtered_df.iterrows():
 
     location = row["Location"]
 
-    score = row["Match Score"]
+    keyword_score = row[
+        "Match Score"
+    ]
 
-    status = row["Status"]
+    status = row[
+        "Status"
+    ]
 
-    url = row["URL"]
+    url = row[
+        "URL"
+    ]
 
-    description = row["Description"] or ""
-
-
-    label = (
-        f"{score:.1f}% — "
-        f"{title} @ {company}"
+    description = (
+        row["Description"]
+        or ""
     )
+
+    stored_ai_match = row[
+        "AI Match"
+    ]
+
+    stored_verdict = row[
+        "AI Verdict"
+    ]
+
+
+    # ========================================================
+    # EXPANDER LABEL
+    # ========================================================
+
+    if pd.notna(
+        stored_ai_match
+    ):
+
+        label = (
+            f"🤖 {int(stored_ai_match)}% AI — "
+            f"{title} @ {company}"
+        )
+
+    else:
+
+        label = (
+            f"{keyword_score:.1f}% — "
+            f"{title} @ {company}"
+        )
 
 
     with st.expander(
         label
     ):
 
-        st.write(
+        # ====================================================
+        # BASIC JOB INFO
+        # ====================================================
+
+        info1, info2, info3 = (
+            st.columns(3)
+        )
+
+        info1.write(
             f"**Location:** {location}"
         )
 
-        st.write(
+        info2.write(
             f"**Status:** {status}"
         )
 
-        st.write(
-            f"**Keyword Resume Match:** "
-            f"{score:.1f}%"
+        info3.write(
+            f"**Keyword Match:** "
+            f"{keyword_score:.1f}%"
         )
 
 
@@ -404,32 +479,44 @@ for _, row in filtered_df.iterrows():
             f"analysis-{job_id}"
         )
 
-        analysis = st.session_state.get(
-            analysis_key
+        analysis = (
+            st.session_state.get(
+                analysis_key
+            )
         )
 
         if analysis is None:
 
-            analysis = get_ai_analysis(
-                job_id
-            )
+            try:
 
-            if analysis:
+                analysis = get_ai_analysis(
+                    job_id
+                )
 
-                st.session_state[
-                    analysis_key
-                ] = analysis
+                if analysis:
+
+                    st.session_state[
+                        analysis_key
+                    ] = analysis
+
+            except Exception as error:
+
+                st.warning(
+                    f"Could not load saved "
+                    f"AI analysis: {error}"
+                )
 
 
         # ====================================================
-        # ANALYZE WITH AI
+        # FIRST AI ANALYSIS
         # ====================================================
 
         if analysis is None:
 
             if st.button(
                 "🤖 Analyze with AI",
-                key=f"ai-{job_id}"
+                key=f"ai-{job_id}",
+                type="primary"
             ):
 
                 if (
@@ -481,34 +568,94 @@ for _, row in filtered_df.iterrows():
         # DISPLAY AI ANALYSIS
         # ====================================================
 
-        analysis = st.session_state.get(
-            analysis_key
-        )
-
         if analysis:
 
             st.markdown(
                 "### 🤖 AI Analysis"
             )
 
-            technical_match = analysis.get(
-                "technical_match",
-                0
+
+            # =================================================
+            # RE-ANALYZE
+            # =================================================
+
+            if st.button(
+                "🔁 Re-analyze with AI",
+                key=f"reanalyze-{job_id}"
+            ):
+
+                if (
+                    "OPENAI_API_KEY"
+                    not in os.environ
+                ):
+
+                    st.error(
+                        "OPENAI_API_KEY "
+                        "is not configured."
+                    )
+
+                else:
+
+                    with st.spinner(
+                        "Re-analyzing this "
+                        "internship..."
+                    ):
+
+                        try:
+
+                            new_analysis = (
+                                analyze_job(
+                                    resume_text=resume_text,
+                                    title=title,
+                                    company=company,
+                                    location=location,
+                                    description=description
+                                )
+                            )
+
+                            save_ai_analysis(
+                                job_id,
+                                new_analysis
+                            )
+
+                            st.session_state[
+                                analysis_key
+                            ] = new_analysis
+
+                            st.rerun()
+
+                        except Exception as error:
+
+                            st.error(
+                                "AI re-analysis "
+                                f"failed: {error}"
+                            )
+
+
+            technical_match = (
+                analysis.get(
+                    "technical_match",
+                    0
+                )
             )
 
-            eligibility_status = analysis.get(
-                "eligibility_status",
-                "UNCLEAR"
+            eligibility_status = (
+                analysis.get(
+                    "eligibility_status",
+                    "UNCLEAR"
+                )
             )
 
-            verdict = analysis.get(
-                "verdict",
-                "N/A"
+            verdict = (
+                analysis.get(
+                    "verdict",
+                    "N/A"
+                )
             )
 
 
-            metric1, metric2 = (
-                st.columns(2)
+            metric1, metric2, metric3 = (
+                st.columns(3)
             )
 
             metric1.metric(
@@ -521,15 +668,15 @@ for _, row in filtered_df.iterrows():
                 eligibility_status
             )
 
-
-            st.write(
-                f"**Verdict:** {verdict}"
+            metric3.metric(
+                "Verdict",
+                verdict
             )
 
 
-            # ================================================
+            # =================================================
             # STRENGTHS
-            # ================================================
+            # =================================================
 
             strengths = analysis.get(
                 "strengths",
@@ -549,9 +696,9 @@ for _, row in filtered_df.iterrows():
                     )
 
 
-            # ================================================
-            # GAPS
-            # ================================================
+            # =================================================
+            # TECHNICAL GAPS
+            # =================================================
 
             gaps = analysis.get(
                 "gaps",
@@ -571,9 +718,9 @@ for _, row in filtered_df.iterrows():
                     )
 
 
-            # ================================================
+            # =================================================
             # HARD REQUIREMENTS
-            # ================================================
+            # =================================================
 
             hard_requirements = (
                 analysis.get(
@@ -590,9 +737,11 @@ for _, row in filtered_df.iterrows():
 
                 for item in hard_requirements:
 
-                    requirement = item.get(
-                        "requirement",
-                        ""
+                    requirement = (
+                        item.get(
+                            "requirement",
+                            ""
+                        )
                     )
 
                     requirement_status = (
@@ -602,9 +751,11 @@ for _, row in filtered_df.iterrows():
                         )
                     )
 
-                    evidence = item.get(
-                        "evidence",
-                        ""
+                    evidence = (
+                        item.get(
+                            "evidence",
+                            ""
+                        )
                     )
 
 
@@ -641,9 +792,9 @@ for _, row in filtered_df.iterrows():
                         )
 
 
-            # ================================================
+            # =================================================
             # PREFERRED QUALIFICATIONS
-            # ================================================
+            # =================================================
 
             preferred = analysis.get(
                 "preferred_qualifications",
@@ -658,9 +809,11 @@ for _, row in filtered_df.iterrows():
 
                 for item in preferred:
 
-                    qualification = item.get(
-                        "qualification",
-                        ""
+                    qualification = (
+                        item.get(
+                            "qualification",
+                            ""
+                        )
                     )
 
                     preferred_status = (
@@ -676,13 +829,15 @@ for _, row in filtered_df.iterrows():
                     )
 
 
-            # ================================================
+            # =================================================
             # RECOMMENDATION
-            # ================================================
+            # =================================================
 
-            recommendation = analysis.get(
-                "recommendation",
-                ""
+            recommendation = (
+                analysis.get(
+                    "recommendation",
+                    ""
+                )
             )
 
             if recommendation:
@@ -697,13 +852,15 @@ for _, row in filtered_df.iterrows():
 
 
         # ====================================================
-        # APPLICATION LINK
+        # APPLICATION
         # ====================================================
+
+        st.markdown("---")
 
         if url:
 
             st.link_button(
-                "Open Application",
+                "🚀 Open Application",
                 url
             )
 
@@ -712,18 +869,22 @@ for _, row in filtered_df.iterrows():
         # JOB DESCRIPTION
         # ====================================================
 
+        with st.expander(
+            "View Full Job Description"
+        ):
+
+            st.write(
+                description
+            )
+
+
+        # ====================================================
+        # APPLICATION STATUS
+        # ====================================================
+
         st.markdown(
-            "### Job Description"
+            "**Application Status**"
         )
-
-        st.write(
-            description
-        )
-
-
-        # ====================================================
-        # STATUS BUTTONS
-        # ====================================================
 
         col1, col2, col3 = (
             st.columns(3)
@@ -731,7 +892,7 @@ for _, row in filtered_df.iterrows():
 
 
         if col1.button(
-            "Save",
+            "⭐ Save",
             key=f"save-{job_id}"
         ):
 
@@ -744,7 +905,7 @@ for _, row in filtered_df.iterrows():
 
 
         if col2.button(
-            "Applied",
+            "✅ Applied",
             key=f"applied-{job_id}"
         ):
 
@@ -757,7 +918,7 @@ for _, row in filtered_df.iterrows():
 
 
         if col3.button(
-            "Skip",
+            "⏭️ Skip",
             key=f"skip-{job_id}"
         ):
 

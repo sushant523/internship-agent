@@ -133,9 +133,14 @@ def get_jobs():
                     url,
                     description,
                     status,
-                    match_score
+                    match_score,
+                    technical_match,
+                    eligibility_status,
+                    ai_verdict
                 FROM jobs
-                ORDER BY match_score DESC
+                ORDER BY
+                    technical_match DESC NULLS LAST,
+                    match_score DESC
                 """
             )
 
@@ -143,7 +148,7 @@ def get_jobs():
 
 
 # ============================================================
-# UPDATE RESUME MATCH SCORE
+# UPDATE KEYWORD MATCH SCORE
 # ============================================================
 
 def update_job_score(
@@ -204,13 +209,11 @@ def save_ai_analysis(
             cursor.execute(
                 """
                 UPDATE jobs
-
                 SET
                     technical_match = %s,
                     eligibility_status = %s,
                     ai_verdict = %s,
                     ai_analysis = %s
-
                 WHERE id = %s
                 """,
                 (
@@ -263,14 +266,12 @@ def get_ai_analysis(
 
             analysis = row[0]
 
-            # psycopg may already return JSONB as a Python dict.
             if isinstance(
                 analysis,
                 dict
             ):
                 return analysis
 
-            # Fallback in case it comes back as JSON text.
             if isinstance(
                 analysis,
                 str
