@@ -14,6 +14,8 @@ from database import (
     get_jobs,
     update_job_score,
     update_job_status,
+    save_ai_analysis,
+    get_ai_analysis,
 )
 
 
@@ -381,67 +383,107 @@ for _, row in filtered_df.iterrows():
     ):
 
         st.write(
-            f"**Location:** "
-            f"{location}"
+            f"**Location:** {location}"
         )
 
         st.write(
-            f"**Status:** "
-            f"{status}"
+            f"**Status:** {status}"
         )
 
         st.write(
-            f"**Resume Match:** "
+            f"**Keyword Resume Match:** "
             f"{score:.1f}%"
         )
 
 
         # ====================================================
-        # AI ANALYSIS
+        # LOAD SAVED AI ANALYSIS
         # ====================================================
 
-        if st.button(
-            "🤖 Analyze with AI",
-            key=f"ai-{job_id}"
-        ):
-
-            if "OPENAI_API_KEY" not in os.environ:
-
-                st.error(
-                    "OPENAI_API_KEY is not configured."
-                )
-
-            else:
-
-                with st.spinner(
-                    "Analyzing this internship..."
-                ):
-
-                    try:
-
-                        analysis = analyze_job(
-                            resume_text=resume_text,
-                            title=title,
-                            company=company,
-                            location=location,
-                            description=description
-                        )
-
-                        st.session_state[
-                            f"analysis-{job_id}"
-                        ] = analysis
-
-                    except Exception as error:
-
-                        st.error(
-                            f"AI analysis failed: {error}"
-                        )
-
-
-        analysis = st.session_state.get(
+        analysis_key = (
             f"analysis-{job_id}"
         )
 
+        analysis = st.session_state.get(
+            analysis_key
+        )
+
+        if analysis is None:
+
+            analysis = get_ai_analysis(
+                job_id
+            )
+
+            if analysis:
+
+                st.session_state[
+                    analysis_key
+                ] = analysis
+
+
+        # ====================================================
+        # ANALYZE WITH AI
+        # ====================================================
+
+        if analysis is None:
+
+            if st.button(
+                "🤖 Analyze with AI",
+                key=f"ai-{job_id}"
+            ):
+
+                if (
+                    "OPENAI_API_KEY"
+                    not in os.environ
+                ):
+
+                    st.error(
+                        "OPENAI_API_KEY "
+                        "is not configured."
+                    )
+
+                else:
+
+                    with st.spinner(
+                        "Analyzing this internship..."
+                    ):
+
+                        try:
+
+                            analysis = analyze_job(
+                                resume_text=resume_text,
+                                title=title,
+                                company=company,
+                                location=location,
+                                description=description
+                            )
+
+                            save_ai_analysis(
+                                job_id,
+                                analysis
+                            )
+
+                            st.session_state[
+                                analysis_key
+                            ] = analysis
+
+                            st.rerun()
+
+                        except Exception as error:
+
+                            st.error(
+                                f"AI analysis failed: "
+                                f"{error}"
+                            )
+
+
+        # ====================================================
+        # DISPLAY AI ANALYSIS
+        # ====================================================
+
+        analysis = st.session_state.get(
+            analysis_key
+        )
 
         if analysis:
 
@@ -449,9 +491,14 @@ for _, row in filtered_df.iterrows():
                 "### 🤖 AI Analysis"
             )
 
-            ai_score = analysis.get(
-                "match_score",
+            technical_match = analysis.get(
+                "technical_match",
                 0
+            )
+
+            eligibility_status = analysis.get(
+                "eligibility_status",
+                "UNCLEAR"
             )
 
             verdict = analysis.get(
@@ -459,16 +506,30 @@ for _, row in filtered_df.iterrows():
                 "N/A"
             )
 
-            st.metric(
-                "AI Match",
-                f"{ai_score}%"
+
+            metric1, metric2 = (
+                st.columns(2)
             )
+
+            metric1.metric(
+                "Technical Match",
+                f"{technical_match}%"
+            )
+
+            metric2.metric(
+                "Eligibility",
+                eligibility_status
+            )
+
 
             st.write(
-                f"**Verdict:** "
-                f"{verdict}"
+                f"**Verdict:** {verdict}"
             )
 
+
+            # ================================================
+            # STRENGTHS
+            # ================================================
 
             strengths = analysis.get(
                 "strengths",
@@ -488,6 +549,10 @@ for _, row in filtered_df.iterrows():
                     )
 
 
+            # ================================================
+            # GAPS
+            # ================================================
+
             gaps = analysis.get(
                 "gaps",
                 []
@@ -496,7 +561,7 @@ for _, row in filtered_df.iterrows():
             if gaps:
 
                 st.markdown(
-                    "**Potential Gaps**"
+                    "**Technical Gaps**"
                 )
 
                 for gap in gaps:
@@ -506,23 +571,114 @@ for _, row in filtered_df.iterrows():
                     )
 
 
-            eligibility_notes = analysis.get(
-                "eligibility_notes",
+            # ================================================
+            # HARD REQUIREMENTS
+            # ================================================
+
+            hard_requirements = (
+                analysis.get(
+                    "hard_requirements",
+                    []
+                )
+            )
+
+            if hard_requirements:
+
+                st.markdown(
+                    "**Hard Requirements**"
+                )
+
+                for item in hard_requirements:
+
+                    requirement = item.get(
+                        "requirement",
+                        ""
+                    )
+
+                    requirement_status = (
+                        item.get(
+                            "status",
+                            "UNCLEAR"
+                        )
+                    )
+
+                    evidence = item.get(
+                        "evidence",
+                        ""
+                    )
+
+
+                    if (
+                        requirement_status
+                        == "MET"
+                    ):
+
+                        icon = "✅"
+
+                    elif (
+                        requirement_status
+                        == "NOT MET"
+                    ):
+
+                        icon = "❌"
+
+                    else:
+
+                        icon = "❓"
+
+
+                    st.write(
+                        f"{icon} "
+                        f"**{requirement}** "
+                        f"— "
+                        f"{requirement_status}"
+                    )
+
+                    if evidence:
+
+                        st.caption(
+                            evidence
+                        )
+
+
+            # ================================================
+            # PREFERRED QUALIFICATIONS
+            # ================================================
+
+            preferred = analysis.get(
+                "preferred_qualifications",
                 []
             )
 
-            if eligibility_notes:
+            if preferred:
 
                 st.markdown(
-                    "**Eligibility Notes**"
+                    "**Preferred Qualifications**"
                 )
 
-                for note in eligibility_notes:
+                for item in preferred:
 
-                    st.write(
-                        f"• {note}"
+                    qualification = item.get(
+                        "qualification",
+                        ""
                     )
 
+                    preferred_status = (
+                        item.get(
+                            "status",
+                            ""
+                        )
+                    )
+
+                    st.write(
+                        f"• {qualification} "
+                        f"— {preferred_status}"
+                    )
+
+
+            # ================================================
+            # RECOMMENDATION
+            # ================================================
 
             recommendation = analysis.get(
                 "recommendation",
